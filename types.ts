@@ -19,9 +19,23 @@ export interface UserInput {
   targetAudience?: string;
 }
 
+export interface ChartPoint {
+  name: string;
+  value: number;
+}
+
+export interface ChartData {
+  title: string;
+  type: 'bar' | 'pie' | 'line' | 'area';
+  data: ChartPoint[];
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+}
+
 export interface GeneratedPlan {
   phase: PlanPhase;
   content: string;
+  chart?: ChartData;
   timestamp: number;
 }
 

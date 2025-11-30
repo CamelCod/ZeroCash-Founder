@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { PhaseSelector } from './components/PhaseSelector';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
+import { ChartRenderer } from './components/ChartRenderer';
 import { generateBusinessPlan } from './services/geminiService';
 import { PROMPT_TEMPLATES, BUSINESS_TYPES } from './constants';
 import { BusinessType, PlanPhase, UserInput, GeneratedPlan } from './types';
-import { Loader2, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, AlertCircle, CheckCircle2, Copy, Download, Printer } from 'lucide-react';
 
 export default function App() {
   const [input, setInput] = useState<UserInput>({
@@ -17,6 +18,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const handleInputChange = (field: keyof UserInput, value: string) => {
     setInput(prev => ({ ...prev, [field]: value }));
@@ -28,17 +30,20 @@ export default function App() {
     setLoading(true);
     setError(null);
     setGeneratedPlan(null);
+    setCopySuccess(false);
 
     try {
       const template = PROMPT_TEMPLATES.find(t => t.id === selectedPhase);
       if (!template) throw new Error("Template not found");
 
       const prompt = template.promptBuilder(input);
-      const content = await generateBusinessPlan(prompt);
+      // Now returns an object with { markdownContent, chart }
+      const response = await generateBusinessPlan(prompt);
 
       setGeneratedPlan({
         phase: selectedPhase,
-        content,
+        content: response.markdownContent,
+        chart: response.chart,
         timestamp: Date.now()
       });
     } catch (err: any) {
@@ -48,22 +53,37 @@ export default function App() {
     }
   }, [input, selectedPhase]);
 
+  const handleCopyToClipboard = async () => {
+    if (!generatedPlan) return;
+    try {
+      await navigator.clipboard.writeText(generatedPlan.content);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    window.print();
+  };
+
   return (
     <Layout>
       <div className="flex flex-col gap-10">
         
         {/* Hero Section */}
-        <div className="text-center max-w-3xl mx-auto space-y-4">
+        <div className="text-center max-w-3xl mx-auto space-y-4 no-print">
           <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
             Launch Your Business for <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-emerald-600">$0</span>
           </h2>
           <p className="text-lg text-slate-600">
-            Tell us about your idea, and our AI will act as your co-founder to generate specific, zero-cost strategies for every stage of your journey.
+            Tell us about your idea, and our AI will act as your co-founder to generate specific, zero-cost strategies and visualizations for every stage of your journey.
           </p>
         </div>
 
         {/* Input Section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-4xl mx-auto w-full">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-4xl mx-auto w-full no-print">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
               <label htmlFor="idea" className="block text-sm font-medium text-slate-700 mb-2">
@@ -103,7 +123,7 @@ export default function App() {
         </div>
 
         {/* Phase Selection Section */}
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-6xl mx-auto w-full no-print">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-900 text-white text-sm">2</span>
@@ -158,29 +178,69 @@ export default function App() {
           <div className="max-w-4xl mx-auto w-full py-12 flex flex-col items-center justify-center text-slate-500 animate-pulse">
             <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
             <p className="text-lg font-medium">Consulting our digital mentors...</p>
-            <p className="text-sm">Analyzing {input.businessIdea} for zero-cash strategies.</p>
+            <p className="text-sm">Analyzing {input.businessIdea} for zero-cash strategies and data models.</p>
           </div>
         )}
 
         {generatedPlan && !loading && (
-          <div className="max-w-4xl mx-auto w-full mb-16 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="max-w-4xl mx-auto w-full mb-16 animate-in fade-in slide-in-from-bottom-4 duration-500 print-content">
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-              <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              
+              {/* Report Header & Toolbar */}
+              <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                   <h3 className="font-bold text-slate-800">Generated Plan: {generatedPlan.phase}</h3>
+                   <div>
+                     <h3 className="font-bold text-slate-800">Generated Plan: {generatedPlan.phase}</h3>
+                     <p className="text-xs text-slate-500 hidden sm:block">for {input.businessIdea} ({input.businessType})</p>
+                   </div>
                 </div>
-                <button 
-                  onClick={() => setGeneratedPlan(null)}
-                  className="text-sm text-slate-500 hover:text-indigo-600 font-medium"
-                >
-                  Clear
-                </button>
+                
+                <div className="flex items-center gap-2 no-print">
+                  <button 
+                    onClick={handleCopyToClipboard}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                    title="Copy Report to Clipboard"
+                  >
+                    {copySuccess ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    {copySuccess ? 'Copied' : 'Copy'}
+                  </button>
+                  <button 
+                    onClick={handleDownloadPDF}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                    title="Download/Print as PDF"
+                  >
+                    <Download className="w-4 h-4" />
+                    PDF
+                  </button>
+                  <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                  <button 
+                    onClick={() => setGeneratedPlan(null)}
+                    className="text-sm text-slate-400 hover:text-red-500 font-medium px-2"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="p-6 md:p-8">
+
+              <div className="p-6 md:p-12 print:p-0 print:m-8">
+                {/* Print Only Header */}
+                <div className="hidden print:block mb-8 border-b border-slate-200 pb-4">
+                   <h1 className="text-3xl font-bold text-slate-900">ZeroCash Founder Report</h1>
+                   <p className="text-slate-500 mt-2">Strategy for: {input.businessIdea}</p>
+                   <p className="text-slate-400 text-sm">Phase: {generatedPlan.phase}</p>
+                </div>
+
+                {generatedPlan.chart && (
+                  <div className="mb-8 page-break-inside-avoid">
+                    <ChartRenderer data={generatedPlan.chart} />
+                  </div>
+                )}
+
                 <MarkdownRenderer content={generatedPlan.content} />
               </div>
-              <div className="bg-indigo-50 px-6 py-4 border-t border-indigo-100">
+              
+              <div className="bg-indigo-50 px-6 py-4 border-t border-indigo-100 no-print">
                 <p className="text-sm text-indigo-800 text-center">
                   💡 <strong>Pro Tip:</strong> Take one step at a time. This plan assumes zero budget, so your time and effort are your currency.
                 </p>
